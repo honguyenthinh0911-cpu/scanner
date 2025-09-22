@@ -15,7 +15,7 @@
     button.primary{background:#3a66ff; border-color:#3a66ff}
     button.ghost{background:transparent}
     .card{background:#0e1631; border:1px solid #1f2b4b; border-radius:16px; padding:14px}
-    .grid{display:grid; gap:12px}
+    .grid{display:grid; gap:16px}
     .muted{opacity:.8; font-size:14px}
     table{width:100%; border-collapse: collapse;}
     th, td{border-bottom:1px solid #1f2b4b; padding:10px; text-align:left}
@@ -29,7 +29,7 @@
   <header class="row" style="justify-content:space-between">
     <div>
       <strong>Galaxy Scanner</strong>
-      <div class="muted">Quét Code128, gom barcode trước → nhập PO sau, gửi về n8n</div>
+      <div class="muted">Quét Code128, xem trước danh sách tạm → nhập PO → Nhận PO</div>
     </div>
     <div class="kpi">
       <div>Tổng bản ghi: <strong id="kpi-unique">0</strong></div>
@@ -40,23 +40,33 @@
       <input id="webhook" type="url" value="https://galaxyfurchatbot.online/webhook-test/scanner" style="min-width:320px" />
       <button class="primary" id="btn-send">Gửi về n8n</button>
       <button class="ghost" id="btn-export">Xuất CSV</button>
-      <button class="warn ghost" id="btn-undo">Hoàn tác</button>
       <button class="err ghost" id="btn-clear">Xóa tất cả</button>
       <button class="ghost" onclick="initBeep()">🔊 Bật âm thanh</button>
     </div>
   </header>
 
-  <main class="grid" style="gap:16px">
+  <main class="grid">
     <section class="card">
       <div id="reader"></div>
       <div class="row" style="margin-top:12px">
         <input id="input-po" placeholder="Nhập PO cho đợt quét" style="flex:1" />
         <button class="primary" id="btn-commit">Nhận PO</button>
       </div>
-      <div class="muted" style="margin-top:8px">Quét barcode trước → nhập PO → bấm Nhận PO để lưu. Camera sẽ tự làm mới.</div>
+      <div class="muted" style="margin-top:8px">Danh sách tạm sẽ hiển thị barcode vừa quét. Sau khi nhập PO và Nhận PO, dữ liệu sẽ được gán và chuyển vào danh sách chính.</div>
     </section>
 
     <section class="card">
+      <h3>Danh sách quét tạm (chưa gán PO)</h3>
+      <div style="max-height:200px; overflow:auto; margin-bottom:12px">
+        <table>
+          <thead><tr><th>Barcode</th><th>Số lượng</th></tr></thead>
+          <tbody id="tbody-buffer"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Danh sách barcode đã gán PO</h3>
       <div style="max-height:300px; overflow:auto; margin-bottom:12px">
         <table>
           <thead><tr><th>Mã</th><th>PO</th><th>Số lượng</th></tr></thead>
@@ -84,7 +94,7 @@
 
     const state = {
       totals: new Map(), // key = barcode|PO, value = count
-      buffer: new Map(), // lưu barcode chưa gán PO
+      buffer: new Map(), // barcode chưa gán PO
       totalScans: 0,
       sessionId: `sess_${Date.now()}`,
       lastScanTime: 0
@@ -106,6 +116,7 @@
 
       const prev = state.buffer.get(barcode) || 0;
       state.buffer.set(barcode, prev + 1);
+      renderBuffer();
       playBeep();
     }
 
@@ -120,6 +131,7 @@
       }
       state.buffer.clear();
       document.getElementById('input-po').value = '';
+      renderBuffer();
       renderTable();
       refreshKPIs();
       restartScanner();
@@ -127,7 +139,7 @@
 
     function clearAll(){
       state.totals.clear(); state.buffer.clear(); state.totalScans = 0;
-      renderTable(); refreshKPIs();
+      renderBuffer(); renderTable(); refreshKPIs();
     }
 
     function toArrayTotals(){
@@ -135,6 +147,16 @@
         const [barcode, po] = key.split('|');
         return {code: barcode, po: po, count: count};
       });
+    }
+
+    function renderBuffer(){
+      const tbody = document.getElementById('tbody-buffer');
+      tbody.innerHTML = '';
+      for (const [barcode, count] of state.buffer.entries()){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${barcode}</td><td>${count}</td>`;
+        tbody.appendChild(tr);
+      }
     }
 
     function renderTable(){
