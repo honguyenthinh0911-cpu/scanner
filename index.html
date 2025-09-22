@@ -42,6 +42,7 @@
       <button class="ghost" id="btn-export">Xuất CSV</button>
       <button class="warn ghost" id="btn-undo">Hoàn tác</button>
       <button class="err ghost" id="btn-clear">Xóa tất cả</button>
+      <button class="ghost" onclick="initBeep()">🔊 Bật âm thanh</button>
     </div>
   </header>
 
@@ -71,7 +72,9 @@
   <script>
     let beepSound;
     function initBeep(){
-      beepSound = new Audio('beep.mp3'); // cần upload file beep.mp3 cùng repo
+      beepSound = new Audio('beep.mp3');
+      beepSound.load();
+      alert('Âm thanh đã sẵn sàng, hãy thử quét!');
     }
 
     function playBeep(){
@@ -184,11 +187,10 @@
     }
 
     function startScanner(){
-      const config = { fps: 15, qrbox: {width:600, height:200}, rememberLastUsedCamera:true, showTorchButtonIfSupported:true, aspectRatio:1.7778 };
+      const config = { fps: 15, qrbox: {width:700, height:220}, rememberLastUsedCamera:true, showTorchButtonIfSupported:true, aspectRatio:1.7778 };
       if(window.scanner){ window.scanner.clear().catch(()=>{}); }
       window.scanner = new Html5QrcodeScanner('reader', config, false);
       window.scanner.render(onScanSuccess);
-      initBeep();
     }
 
     document.getElementById('btn-send').onclick = sendToN8n;
