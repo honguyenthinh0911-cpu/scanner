@@ -5,13 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Galaxy Scanner — Quét Barcode/QR & Gửi n8n</title>
   <style>
-    body{font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; margin:0; background:#0b1020; color:#eaf2ff}
+    body{font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin:0; background:#0b1020; color:#eaf2ff}
     header{position:sticky; top:0; background:#0b1020cc; backdrop-filter: blur(6px); border-bottom:1px solid #223; padding:12px 16px}
     main{padding:16px; max-width:900px; margin:0 auto}
     .row{display:flex; gap:12px; flex-wrap:wrap; align-items:center}
     label{font-size:14px; opacity:.9}
-    input, button, select, textarea{background:#111933; color:#eaf2ff; border:1px solid #2a3658; border-radius:12px; padding:10px 12px; font-size:16px}
-    input:focus, textarea:focus, button:focus{outline:2px solid #4e8bff44}
+    input, button, select{background:#111933; color:#eaf2ff; border:1px solid #2a3658; border-radius:12px; padding:10px 12px; font-size:16px}
     button{cursor:pointer}
     button.primary{background:#3a66ff; border-color:#3a66ff}
     button.ghost{background:transparent}
@@ -44,6 +43,7 @@
         <option value="barcode">Barcode ngang (400x150)</option>
       </select>
       <button class="primary" id="btn-restart">Áp dụng</button>
+      <button class="ghost" id="btn-expand">Mở rộng ô quét</button>
     </div>
   </header>
 
@@ -94,6 +94,7 @@
       lastCode: null,
       sessionId: `sess_${Date.now()}`,
       lastScanTime: 0,
+      expanded: false
     };
 
     function refreshKPIs(){
@@ -102,14 +103,16 @@
     }
 
     function playBeep(){
-      const audio = new Audio('https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg');
-      audio.play();
+      try {
+        const audio = new Audio('https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg');
+        audio.play().catch(()=>{});
+      } catch(e){}
       if(navigator.vibrate) navigator.vibrate(80);
     }
 
     function addCode(raw){
       const now = Date.now();
-      if(now - state.lastScanTime < 2000) return; // 2 giây delay giữa các lần quét
+      if(now - state.lastScanTime < 2000) return; // 2 giây delay
       state.lastScanTime = now;
 
       const code = String(raw||'').trim();
@@ -194,22 +197,23 @@
 
     function startScanner(){
       const mode = document.getElementById('scanMode').value;
-      let config;
-      if(mode === 'qr') config = { fps: 10, qrbox: {width:300,height:300}, rememberLastUsedCamera:true, showTorchButtonIfSupported:true };
-      else config = { fps: 10, qrbox: {width:400,height:150}, rememberLastUsedCamera:true, showTorchButtonIfSupported:true };
-
+      let w=300,h=300;
+      if(mode==='barcode'){w=400;h=150;}
+      if(state.expanded){w*=1.5;h*=1.5;}
+      const config = { fps: 15, qrbox: {width:w,height:h}, rememberLastUsedCamera:true, showTorchButtonIfSupported:true, aspectRatio:1.7778 };
       if(window.scanner){ window.scanner.clear().catch(()=>{}); }
       window.scanner = new Html5QrcodeScanner('reader', config, false);
       window.scanner.render(onScanSuccess,onScanFailure);
     }
 
-    document.getElementById('btn-restart').onclick = ()=>{startScanner();};
+    document.getElementById('btn-restart').onclick = startScanner;
     document.getElementById('btn-send').onclick = sendToN8n;
     document.getElementById('btn-export').onclick = exportCSV;
     document.getElementById('btn-clear').onclick = clearAll;
     document.getElementById('btn-undo').onclick = undo;
     document.getElementById('btn-add').onclick = ()=>{ const v = document.getElementById('manual').value; addCode(v); document.getElementById('manual').value=''; };
     document.getElementById('manual').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); document.getElementById('btn-add').click(); }});
+    document.getElementById('btn-expand').onclick = ()=>{ state.expanded=!state.expanded; startScanner(); };
 
     startScanner();
   </script>
