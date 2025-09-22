@@ -3,26 +3,25 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Galaxy Scanner — Quét Barcode/QR & Gửi n8n</title>
+  <title>Galaxy Scanner — Quét Barcode (Code128) & Gửi n8n</title>
   <style>
     body{font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin:0; background:#0b1020; color:#eaf2ff}
     header{position:sticky; top:0; background:#0b1020cc; backdrop-filter: blur(6px); border-bottom:1px solid #223; padding:12px 16px}
-    main{padding:16px; max-width:900px; margin:0 auto}
+    main{padding:16px; max-width:1100px; margin:0 auto}
     .row{display:flex; gap:12px; flex-wrap:wrap; align-items:center}
     label{font-size:14px; opacity:.9}
-    input, button, select{background:#111933; color:#eaf2ff; border:1px solid #2a3658; border-radius:12px; padding:10px 12px; font-size:16px}
+    input, button{background:#111933; color:#eaf2ff; border:1px solid #2a3658; border-radius:12px; padding:10px 12px; font-size:16px}
     button{cursor:pointer}
     button.primary{background:#3a66ff; border-color:#3a66ff}
     button.ghost{background:transparent}
     .card{background:#0e1631; border:1px solid #1f2b4b; border-radius:16px; padding:14px}
     .grid{display:grid; gap:12px}
-    .grid.cols-2{grid-template-columns: 1fr 1fr}
     .muted{opacity:.8; font-size:14px}
     table{width:100%; border-collapse: collapse;}
     th, td{border-bottom:1px solid #1f2b4b; padding:10px; text-align:left}
     .kpi{display:flex; gap:12px; flex-wrap:wrap}
     .kpi div{background:#0e1631; padding:10px 12px; border:1px solid #1f2b4b; border-radius:12px}
-    #reader{border-radius:16px; overflow:hidden; border:1px solid #1f2b4b}
+    #reader{border-radius:16px; overflow:hidden; border:1px solid #1f2b4b; min-height:380px}
   </style>
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 </head>
@@ -30,84 +29,70 @@
   <header class="row" style="justify-content:space-between">
     <div>
       <strong>Galaxy Scanner</strong>
-      <div class="muted">Quét mã, cộng số lượng, gửi về n8n</div>
+      <div class="muted">Quét Code128, cộng số lượng, gửi về n8n</div>
     </div>
     <div class="kpi">
       <div>Tổng mã duy nhất: <strong id="kpi-unique">0</strong></div>
       <div>Tổng lượt quét: <strong id="kpi-count">0</strong></div>
     </div>
     <div class="row">
-      <label for="scanMode">Khung quét:</label>
-      <select id="scanMode">
-        <option value="qr">QR vuông (300x300)</option>
-        <option value="barcode">Barcode ngang (400x150)</option>
-      </select>
-      <button class="primary" id="btn-restart">Áp dụng</button>
-      <button class="ghost" id="btn-expand">Mở rộng ô quét</button>
+      <label for="webhook">Webhook n8n (POST)</label>
+      <input id="webhook" type="url" value="https://galaxyfurchatbot.online/webhook-test/scanner" style="min-width:320px" />
+      <button class="primary" id="btn-send">Gửi về n8n</button>
+      <button class="ghost" id="btn-export">Xuất CSV</button>
+      <button class="warn ghost" id="btn-undo">Hoàn tác</button>
+      <button class="err ghost" id="btn-clear">Xóa tất cả</button>
     </div>
   </header>
 
   <main class="grid" style="gap:16px">
     <section class="card">
-      <div class="row" style="justify-content:space-between; align-items:end">
-        <div style="flex:1; min-width:260px">
-          <label for="webhook">Webhook n8n (POST)</label>
-          <input id="webhook" type="url" value="https://galaxyfurchatbot.online/webhook-test/scanner" />
-          <div class="muted">Bạn có thể thay đổi URL webhook nếu cần.</div>
-        </div>
-        <div class="row">
-          <button class="ghost" id="btn-export">Xuất CSV</button>
-          <button class="warn ghost" id="btn-undo">Hoàn tác 1 lần quét</button>
-          <button class="err ghost" id="btn-clear">Xóa tất cả</button>
-          <button class="primary" id="btn-send">Gửi về n8n</button>
-        </div>
-      </div>
+      <div id="reader"></div>
+      <div class="muted" style="margin-top:8px">Chỉ nhận barcode chuẩn Code128. Nếu không nhận ra Code128 thì sẽ bỏ qua.</div>
     </section>
 
-    <section class="grid cols-2">
-      <div class="card">
-        <div id="reader"></div>
-        <div class="muted" style="margin-top:8px">Nếu không bật được camera, hãy kiểm tra HTTPS và quyền camera. Có thể chọn lại camera sau trong giao diện scanner.</div>
+    <section class="card">
+      <div style="max-height:300px; overflow:auto; margin-bottom:12px">
+        <table>
+          <thead><tr><th>Mã</th><th>Số lượng</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
       </div>
-      <div class="card">
-        <div class="row">
-          <div style="flex:1">
-            <label for="manual">Nhập tay (khi mã bị trầy xước)</label>
-            <input id="manual" placeholder="Nhập barcode/QR rồi Enter hoặc bấm Thêm" />
-          </div>
-          <button id="btn-add" class="ghost">Thêm</button>
+      <div class="row">
+        <div style="flex:1">
+          <label for="manual">Nhập tay (khi mã bị trầy xước)</label>
+          <input id="manual" placeholder="Nhập barcode rồi Enter hoặc bấm Thêm" />
         </div>
-        <div style="max-height:380px; overflow:auto; margin-top:8px">
-          <table>
-            <thead><tr><th>Mã</th><th>Số lượng</th></tr></thead>
-            <tbody id="tbody"></tbody>
-          </table>
-        </div>
+        <button id="btn-add" class="ghost">Thêm</button>
       </div>
     </section>
   </main>
 
   <script>
+    let beepSound;
+    function initBeep(){
+      beepSound = new Audio('beep.mp3'); // cần upload file beep.mp3 cùng repo
+    }
+
+    function playBeep(){
+      if(beepSound){
+        beepSound.currentTime = 0;
+        beepSound.play().catch(()=>{});
+      }
+      if(navigator.vibrate) navigator.vibrate(80);
+    }
+
     const state = {
       totals: new Map(),
       totalScans: 0,
       lastCode: null,
       sessionId: `sess_${Date.now()}`,
-      lastScanTime: 0,
-      expanded: false
+      lastScanTime: 0
     };
 
     function refreshKPIs(){
       document.getElementById('kpi-unique').textContent = state.totals.size;
       document.getElementById('kpi-count').textContent = state.totalScans;
-    }
-
-    function playBeep(){
-      try {
-        const audio = new Audio('https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg');
-        audio.play().catch(()=>{});
-      } catch(e){}
-      if(navigator.vibrate) navigator.vibrate(80);
     }
 
     function addCode(raw){
@@ -117,6 +102,11 @@
 
       const code = String(raw||'').trim();
       if(!code) return;
+
+      // chỉ chấp nhận Code128 (theo định dạng phổ biến: chữ+ số, độ dài >=3)
+      const code128Regex = /^[A-Za-z0-9\-]+$/;
+      if(!code128Regex.test(code)) return;
+
       const prev = state.totals.get(code) || 0;
       state.totals.set(code, prev + 1);
       state.totalScans += 1;
@@ -151,9 +141,8 @@
       tbody.innerHTML = '';
       for (const [code, count] of state.totals.entries()){
         const tr = document.createElement('tr');
-        const td1 = document.createElement('td'); td1.textContent = code; td1.style.wordBreak='break-all';
-        const td2 = document.createElement('td'); td2.textContent = count;
-        tr.appendChild(td1); tr.appendChild(td2); tbody.appendChild(tr);
+        tr.innerHTML = `<td>${code}</td><td>${count}</td>`;
+        tbody.appendChild(tr);
       }
     }
 
@@ -168,7 +157,7 @@
         totals: toArrayTotals(),
       };
       try{
-        const res = await fetch(url, {
+        await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -193,27 +182,21 @@
     function onScanSuccess(decodedText){
       addCode(decodedText);
     }
-    function onScanFailure(error){ }
 
     function startScanner(){
-      const mode = document.getElementById('scanMode').value;
-      let w=300,h=300;
-      if(mode==='barcode'){w=400;h=150;}
-      if(state.expanded){w*=1.5;h*=1.5;}
-      const config = { fps: 15, qrbox: {width:w,height:h}, rememberLastUsedCamera:true, showTorchButtonIfSupported:true, aspectRatio:1.7778 };
+      const config = { fps: 15, qrbox: {width:600, height:200}, rememberLastUsedCamera:true, showTorchButtonIfSupported:true, aspectRatio:1.7778 };
       if(window.scanner){ window.scanner.clear().catch(()=>{}); }
       window.scanner = new Html5QrcodeScanner('reader', config, false);
-      window.scanner.render(onScanSuccess,onScanFailure);
+      window.scanner.render(onScanSuccess);
+      initBeep();
     }
 
-    document.getElementById('btn-restart').onclick = startScanner;
     document.getElementById('btn-send').onclick = sendToN8n;
     document.getElementById('btn-export').onclick = exportCSV;
     document.getElementById('btn-clear').onclick = clearAll;
     document.getElementById('btn-undo').onclick = undo;
     document.getElementById('btn-add').onclick = ()=>{ const v = document.getElementById('manual').value; addCode(v); document.getElementById('manual').value=''; };
     document.getElementById('manual').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); document.getElementById('btn-add').click(); }});
-    document.getElementById('btn-expand').onclick = ()=>{ state.expanded=!state.expanded; startScanner(); };
 
     startScanner();
   </script>
