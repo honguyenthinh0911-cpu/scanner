@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Galaxy Scanner — Quét Barcode/QR & Gửi n8n</title>
+  <style>
+    body{font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; margin:0; background:#0b1020; color:#eaf2ff}
+    header{position:sticky; top:0; background:#0b1020cc; backdrop-filter: blur(6px); border-bottom:1px solid #223; padding:12px 16px}
+    main{padding:16px; max-width:900px; margin:0 auto}
+    .row{display:flex; gap:12px; flex-wrap:wrap; align-items:center}
+    label{font-size:14px; opacity:.9}
+    input, button, select, textarea{background:#111933; color:#eaf2ff; border:1px solid #2a3658; border-radius:12px; padding:10px 12px; font-size:16px}
+    input:focus, textarea:focus, button:focus{outline:2px solid #4e8bff44}
+    button{cursor:pointer}
+    button.primary{background:#3a66ff; border-color:#3a66ff}
+    button.ghost{background:transparent}
+    .card{background:#0e1631; border:1px solid #1f2b4b; border-radius:16px; padding:14px}
+    .grid{display:grid; gap:12px}
+    .grid.cols-2{grid-template-columns: 1fr 1fr}
+    .muted{opacity:.8; font-size:14px}
+    table{width:100%; border-collapse: collapse;}
+    th, td{border-bottom:1px solid #1f2b4b; padding:10px; text-align:left}
+    .kpi{display:flex; gap:12px; flex-wrap:wrap}
+    .kpi div{background:#0e1631; padding:10px 12px; border:1px solid #1f2b4b; border-radius:12px}
+    .ok{color:#80ffa7}
+    .warn{color:#ffd480}
+    .err{color:#ff8b8b}
+    #reader{border-radius:16px; overflow:hidden; border:1px solid #1f2b4b}
+  </style>
+  <!-- Html5-QRCode library (camera scanning) -->
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+</head>
+<body>
+  <header class="row" style="justify-content:space-between">
+    <div>
+      <strong>Galaxy Scanner</strong>
+      <div class="muted">Quét mã, cộng số lượng, gửi về n8n</div>
+    </div>
+    <div class="kpi">
+      <div>Tổng mã duy nhất: <strong id="kpi-unique">0</strong></div>
+      <div>Tổng lượt quét: <strong id="kpi-count">0</strong></div>
+    </div>
+  </header>
+
+  <main class="grid" style="gap:16px">
+    <section class="card">
+      <div class="row" style="justify-content:space-between; align-items:end">
+        <div style="flex:1; min-width:260px">
+          <label for="webhook">Webhook n8n (POST)</label>
+          <input id="webhook" type="url" value="https://galaxyfurchatbot.online/webhook-test/scanner" />
+          <div class="muted">Mẹo: Đã thiết lập sẵn đường dẫn webhook. Nếu cần, bạn có thể thay đổi URL này.</div>
+        </div>
+        <div class="row">
+          <button class="ghost" id="btn-export">Xuất CSV</button>
+          <button class="warn ghost" id="btn-undo">Hoàn tác 1 lần quét</button>
+          <button class="err ghost" id="btn-clear">Xóa tất cả</button>
+          <button class="primary" id="btn-send">Gửi về n8n</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid cols-2">
+      <div class="card">
+        <div id="reader"></div>
+        <div class="muted" style="margin-top:8px">Nếu không bật được camera, hãy kiểm tra trang đang chạy trên HTTPS hoặc dùng trình duyệt khác. Có thể chạm biểu tượng đèn pin nếu thiết bị hỗ trợ.</div>
+      </div>
+      <div class="card">
+        <div class="row">
+          <div style="flex:1">
+            <label for="manual">Nhập tay (khi mã bị trầy xước)</label>
+            <input id="manual" placeholder="Nhập barcode/QR rồi Enter hoặc bấm Thêm" />
+          </div>
+          <button id="btn-add" class="ghost">Thêm</button>
+        </div>
+        <div style="max-height:380px; overflow:auto; margin-top:8px">
+          <table>
+            <thead><tr><th>Mã</th><th>Số lượng</th></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // ====== STATE ======
+    const state = {
+      totals: new Map(),   // code -> count
+      totalScans: 0,
+      lastCode: null,
+      sessionId: `sess_${Date.now()}`,
+    };
+
+    function refreshKPIs(){
+      document.getElementById('kpi-unique').textContent = state.totals.size;
+      document.getElementById('kpi-count').textContent = state.totalScans;
+    }
+
+    function playBeep(){
+      try{
+        const ctx = new (window.AudioContext||window.webkitAudioContext)();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.frequency.value = 880; // A5
+        o.connect(g); g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.05, ctx.currentTime);
+        o.start(); o.stop(ctx.currentTime + 0.08);
+      }catch(e){}
+    }
+
+    function vibrate(ms=50){ if (navigator.vibrate) navigator.vibrate(ms); }
+
+    function addCode(raw){
+      const code = String(raw||'').trim();
+      if(!code) return;
+      const prev = state.totals.get(code) || 0;
+      state.totals.set(code, prev + 1);
+      state.totalScans += 1;
+      state.lastCode = code;
+      renderTable();
+      refreshKPIs();
+      playBeep(); vibrate();
+    }
+
+    function undo(){
+      const code = state.lastCode;
+      if(!code) return;
+      const current = state.totals.get(code) || 0;
+      if(current <= 1){ state.totals.delete(code); }
+      else { state.totals.set(code, current - 1); }
+      state.totalScans = Math.max(0, state.totalScans - 1);
+      state.lastCode = null;
+      renderTable(); refreshKPIs();
+    }
+
+    function clearAll(){
+      state.totals.clear(); state.totalScans = 0; state.lastCode = null;
+      renderTable(); refreshKPIs();
+    }
+
+    function toArrayTotals(){
+      return Array.from(state.totals.entries()).map(([code,count])=>({code, count}));
+    }
+
+    function renderTable(){
+      const tbody = document.getElementById('tbody');
+      tbody.innerHTML = '';
+      for (const [code, count] of state.totals.entries()){
+        const tr = document.createElement('tr');
+        const td1 = document.createElement('td'); td1.textContent = code; td1.style.wordBreak='break-all';
+        const td2 = document.createElement('td'); td2.textContent = count;
+        tr.appendChild(td1); tr.appendChild(td2); tbody.appendChild(tr);
+      }
+    }
+
+    // ====== SEND to n8n (CORS-friendly: x-www-form-urlencoded) ======
+    async function sendToN8n(){
+      const url = document.getElementById('webhook').value.trim();
+      if(!url){ alert('Bạn chưa điền URL webhook n8n'); return; }
+      const payload = {
+        device: navigator.userAgent,
+        session_id: state.sessionId,
+        sent_at: new Date().toISOString(),
+        total_scans: state.totalScans,
+        totals: toArrayTotals(),
+      };
+      const body = new URLSearchParams({ data: JSON.stringify(payload) });
+      try{
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body
+        });
+        alert('Đã gửi dữ liệu về n8n!');
+      }catch(err){
+        console.error(err);
+        alert('Gửi thất bại. Kiểm tra URL webhook & CORS.');
+      }
+    }
+
+    // ====== EXPORT CSV ======
+    function exportCSV(){
+      const rows = [['code','count'], ...toArrayTotals().map(x=>[x.code, x.count])];
+      const csv = rows.map(r => r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `scanner_totals_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+
+    // ====== SCANNER (Html5QrcodeScanner – built-in UI) ======
+    function onScanSuccess(decodedText, decodedResult){
+      addCode(decodedText);
+    }
+    function onScanFailure(error){ }
+
+    const scannerConfig = {
+      fps: 12,
+      qrbox: { width: 320, height: 160 },
+      rememberLastUsedCamera: true,
+      showTorchButtonIfSupported: true,
+      supportedScanTypes: [ Html5QrcodeScanType.SCAN_TYPE_CAMERA ]
+    };
+
+    let scanner;
+    window.addEventListener('load', ()=>{
+      scanner = new Html5QrcodeScanner('reader', scannerConfig, false);
+      scanner.render(onScanSuccess, onScanFailure);
+      refreshKPIs();
+      document.getElementById('btn-add').onclick = ()=>{ const v = document.getElementById('manual').value; addCode(v); document.getElementById('manual').value=''; };
+      document.getElementById('manual').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); document.getElementById('btn-add').click(); }});
+      document.getElementById('btn-undo').onclick = undo;
+      document.getElementById('btn-clear').onclick = clearAll;
+      document.getElementById('btn-send').onclick = sendToN8n;
+      document.getElementById('btn-export').onclick = exportCSV;
+    });
+  </script>
+</body>
+</html>
