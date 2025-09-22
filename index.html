@@ -29,10 +29,10 @@
   <header class="row" style="justify-content:space-between">
     <div>
       <strong>Galaxy Scanner</strong>
-      <div class="muted">Quét Code128 + nhập PO, cộng số lượng, gửi về n8n</div>
+      <div class="muted">Quét Code128, cộng số lượng, gửi về n8n</div>
     </div>
     <div class="kpi">
-      <div>Tổng bản ghi: <strong id="kpi-unique">0</strong></div>
+      <div>Tổng mã duy nhất: <strong id="kpi-unique">0</strong></div>
       <div>Tổng lượt quét: <strong id="kpi-count">0</strong></div>
     </div>
     <div class="row">
@@ -49,21 +49,20 @@
   <main class="grid" style="gap:16px">
     <section class="card">
       <div id="reader"></div>
-      <div class="muted" style="margin-top:8px">Chỉ nhận barcode chuẩn Code128. Sau khi quét, nhập PO để phân loại.</div>
+      <div class="muted" style="margin-top:8px">Chỉ nhận barcode chuẩn Code128. Nếu không nhận ra Code128 thì sẽ bỏ qua.</div>
     </section>
 
     <section class="card">
       <div style="max-height:300px; overflow:auto; margin-bottom:12px">
         <table>
-          <thead><tr><th>Mã</th><th>PO</th><th>Số lượng</th></tr></thead>
+          <thead><tr><th>Mã</th><th>Số lượng</th></tr></thead>
           <tbody id="tbody"></tbody>
         </table>
       </div>
       <div class="row">
         <div style="flex:1">
-          <label for="manual">Nhập tay (Barcode + PO)</label>
-          <input id="manual-code" placeholder="Nhập barcode" style="margin-bottom:6px;width:100%" />
-          <input id="manual-po" placeholder="Nhập PO" style="width:100%" />
+          <label for="manual">Nhập tay (khi mã bị trầy xước)</label>
+          <input id="manual" placeholder="Nhập barcode rồi Enter hoặc bấm Thêm" />
         </div>
         <button id="btn-add" class="ghost">Thêm</button>
       </div>
@@ -87,9 +86,9 @@
     }
 
     const state = {
-      totals: new Map(), // key = barcode|PO, value = count
+      totals: new Map(),
       totalScans: 0,
-      lastKey: null,
+      lastCode: null,
       sessionId: `sess_${Date.now()}`,
       lastScanTime: 0
     };
@@ -99,52 +98,53 @@
       document.getElementById('kpi-count').textContent = state.totalScans;
     }
 
-    function addEntry(barcode, po){
+    function addCode(raw){
       const now = Date.now();
       if(now - state.lastScanTime < 2000) return; // 2 giây delay
       state.lastScanTime = now;
 
-      if(!barcode || !po) return;
-      const key = `${barcode}|${po}`;
-      const prev = state.totals.get(key) || 0;
-      state.totals.set(key, prev + 1);
+      const code = String(raw||'').trim();
+      if(!code) return;
+
+      // chỉ chấp nhận Code128 (theo định dạng phổ biến: chữ+ số, độ dài >=3)
+      const code128Regex = /^[A-Za-z0-9\-]+$/;
+      if(!code128Regex.test(code)) return;
+
+      const prev = state.totals.get(code) || 0;
+      state.totals.set(code, prev + 1);
       state.totalScans += 1;
-      state.lastKey = key;
+      state.lastCode = code;
       renderTable();
       refreshKPIs();
       playBeep();
     }
 
     function undo(){
-      const key = state.lastKey;
-      if(!key) return;
-      const current = state.totals.get(key) || 0;
-      if(current <= 1){ state.totals.delete(key); }
-      else { state.totals.set(key, current - 1); }
+      const code = state.lastCode;
+      if(!code) return;
+      const current = state.totals.get(code) || 0;
+      if(current <= 1){ state.totals.delete(code); }
+      else { state.totals.set(code, current - 1); }
       state.totalScans = Math.max(0, state.totalScans - 1);
-      state.lastKey = null;
+      state.lastCode = null;
       renderTable(); refreshKPIs();
     }
 
     function clearAll(){
-      state.totals.clear(); state.totalScans = 0; state.lastKey = null;
+      state.totals.clear(); state.totalScans = 0; state.lastCode = null;
       renderTable(); refreshKPIs();
     }
 
     function toArrayTotals(){
-      return Array.from(state.totals.entries()).map(([key,count])=>{
-        const [barcode, po] = key.split('|');
-        return {code: barcode, po: po, count: count};
-      });
+      return Array.from(state.totals.entries()).map(([code,count])=>({code, count}));
     }
 
     function renderTable(){
       const tbody = document.getElementById('tbody');
       tbody.innerHTML = '';
-      for (const [key, count] of state.totals.entries()){
-        const [barcode, po] = key.split('|');
+      for (const [code, count] of state.totals.entries()){
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${barcode}</td><td>${po}</td><td>${count}</td>`;
+        tr.innerHTML = `<td>${code}</td><td>${count}</td>`;
         tbody.appendChild(tr);
       }
     }
@@ -173,7 +173,7 @@
     }
 
     function exportCSV(){
-      const rows = [['code','po','count'], ...toArrayTotals().map(x=>[x.code, x.po, x.count])];
+      const rows = [['code','count'], ...toArrayTotals().map(x=>[x.code, x.count])];
       const csv = rows.map(r => r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
       const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
       const a = document.createElement('a');
@@ -183,14 +183,7 @@
     }
 
     function onScanSuccess(decodedText){
-      // Sau khi quét barcode → hỏi PO
-      const barcode = String(decodedText||'').trim();
-      if(!barcode) return;
-      const code128Regex = /^[A-Za-z0-9\-]+$/;
-      if(!code128Regex.test(barcode)) return;
-
-      const po = prompt(`Nhập PO cho barcode: ${barcode}`);
-      if(po){ addEntry(barcode, po.trim()); }
+      addCode(decodedText);
     }
 
     function startScanner(){
@@ -204,13 +197,8 @@
     document.getElementById('btn-export').onclick = exportCSV;
     document.getElementById('btn-clear').onclick = clearAll;
     document.getElementById('btn-undo').onclick = undo;
-    document.getElementById('btn-add').onclick = ()=>{ 
-      const barcode = document.getElementById('manual-code').value;
-      const po = document.getElementById('manual-po').value;
-      addEntry(barcode, po);
-      document.getElementById('manual-code').value='';
-      document.getElementById('manual-po').value='';
-    };
+    document.getElementById('btn-add').onclick = ()=>{ const v = document.getElementById('manual').value; addCode(v); document.getElementById('manual').value=''; };
+    document.getElementById('manual').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); document.getElementById('btn-add').click(); }});
 
     startScanner();
   </script>
