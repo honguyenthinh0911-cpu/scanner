@@ -112,7 +112,7 @@
 
     function addToBuffer(barcode, qty=1){
       const now = Date.now();
-      if(now - state.lastScanTime < 500) return; // giảm delay để nhận tốt hơn
+      if(now - state.lastScanTime < 2000) return; // delay 2 giây giữa các lần quét
       state.lastScanTime = now;
       if(!barcode) return;
 
@@ -218,7 +218,7 @@
     }
 
     function startScanner(){
-      const config = { fps: 20, qrbox: {width:750, height:250}, rememberLastUsedCamera:true, showTorchButtonIfSupported:true, aspectRatio:1.7778 }; // tăng fps, vùng quét rộng hơn
+      const config = { fps: 30, qrbox: {width:800, height:300}, rememberLastUsedCamera:true, showTorchButtonIfSupported:true, aspectRatio:1.7778, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }; // tăng fps, vùng quét lớn hơn, bật barcode detector
       if(window.scanner){ window.scanner.clear().catch(()=>{}); }
       window.scanner = new Html5QrcodeScanner('reader', config, false);
       window.scanner.render(onScanSuccess);
