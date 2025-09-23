@@ -38,6 +38,7 @@
     <div class="row">
       <label for="webhook">Webhook n8n (POST)</label>
       <input id="webhook" type="url" value="https://galaxyfurchatbot.online/webhook-test/scanner" style="min-width:320px" />
+      <button class="ghost" id="btn-save-webhook">💾 Lưu Webhook</button>
       <button class="primary" id="btn-send">Gửi về n8n</button>
       <button class="ghost" id="btn-export">Xuất CSV</button>
       <button class="err ghost" id="btn-clear">Xóa tất cả</button>
@@ -115,8 +116,8 @@
       const now = Date.now();
       if(!barcode) return;
 
-      // tránh quét trùng
-      if(barcode === state.lastCode && (now - state.lastScanTime < 2000)) {
+      // giảm delay xuống 1 giây
+      if(barcode === state.lastCode && (now - state.lastScanTime < 1000)) {
         return;
       }
 
@@ -226,16 +227,16 @@
 
     function startScanner(){
       const config = { 
-        fps: 25, 
-        qrbox: {width:500, height:150}, // vùng quét hẹp hơn để lấy barcode nhỏ
+        fps: 30, // tăng tốc độ quét
+        qrbox: {width:700, height:250}, // vùng quét lớn hơn để hỗ trợ barcode nhỏ/nhòe
         rememberLastUsedCamera:true,
         showTorchButtonIfSupported:true,
         aspectRatio:1.7778,
         experimentalFeatures: { useBarCodeDetectorIfSupported: true },
         videoConstraints: {
           facingMode: "environment",
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
         }
       };
       if(window.scanner){ window.scanner.clear().catch(()=>{}); }
@@ -254,6 +255,15 @@
         startScanner();
       }
     }
+
+    // Lưu webhook vào localStorage
+    const webhookInput = document.getElementById('webhook');
+    const savedWebhook = localStorage.getItem('scannerWebhook');
+    if(savedWebhook) webhookInput.value = savedWebhook;
+    document.getElementById('btn-save-webhook').onclick = ()=>{
+      localStorage.setItem('scannerWebhook', webhookInput.value.trim());
+      alert('Webhook đã lưu!');
+    };
 
     document.getElementById('btn-send').onclick = sendToN8n;
     document.getElementById('btn-export').onclick = exportCSV;
