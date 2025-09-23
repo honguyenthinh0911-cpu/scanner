@@ -59,9 +59,14 @@
       <h3>Danh sách quét tạm (chưa gán PO)</h3>
       <div style="max-height:200px; overflow:auto; margin-bottom:12px">
         <table>
-          <thead><tr><th>Barcode</th><th>Số lượng</th></tr></thead>
+          <thead><tr><th>Barcode</th><th>Số lượng</th><th>Xóa</th></tr></thead>
           <tbody id="tbody-buffer"></tbody>
         </table>
+      </div>
+      <div class="row">
+        <input id="manual-code" placeholder="Nhập barcode tay" style="flex:1" />
+        <input id="manual-count" type="number" min="1" value="1" style="width:80px" />
+        <button id="btn-add-manual" class="ghost">Thêm tay</button>
       </div>
     </section>
 
@@ -105,9 +110,9 @@
       document.getElementById('kpi-count').textContent = state.totalScans;
     }
 
-    function addToBuffer(barcode){
+    function addToBuffer(barcode, qty=1){
       const now = Date.now();
-      if(now - state.lastScanTime < 2000) return; // 2 giây delay
+      if(now - state.lastScanTime < 500) return; // giảm delay để nhận tốt hơn
       state.lastScanTime = now;
       if(!barcode) return;
 
@@ -115,9 +120,14 @@
       if(!code128Regex.test(barcode)) return;
 
       const prev = state.buffer.get(barcode) || 0;
-      state.buffer.set(barcode, prev + 1);
+      state.buffer.set(barcode, prev + qty);
       renderBuffer();
       playBeep();
+    }
+
+    function removeFromBuffer(barcode){
+      state.buffer.delete(barcode);
+      renderBuffer();
     }
 
     function commitPO(){
@@ -154,7 +164,7 @@
       tbody.innerHTML = '';
       for (const [barcode, count] of state.buffer.entries()){
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${barcode}</td><td>${count}</td>`;
+        tr.innerHTML = `<td>${barcode}</td><td>${count}</td><td><button onclick=\"removeFromBuffer('${barcode}')\">❌</button></td>`;
         tbody.appendChild(tr);
       }
     }
@@ -208,7 +218,7 @@
     }
 
     function startScanner(){
-      const config = { fps: 15, qrbox: {width:700, height:220}, rememberLastUsedCamera:true, showTorchButtonIfSupported:true, aspectRatio:1.7778 };
+      const config = { fps: 20, qrbox: {width:750, height:250}, rememberLastUsedCamera:true, showTorchButtonIfSupported:true, aspectRatio:1.7778 }; // tăng fps, vùng quét rộng hơn
       if(window.scanner){ window.scanner.clear().catch(()=>{}); }
       window.scanner = new Html5QrcodeScanner('reader', config, false);
       window.scanner.render(onScanSuccess);
@@ -230,6 +240,13 @@
     document.getElementById('btn-export').onclick = exportCSV;
     document.getElementById('btn-clear').onclick = clearAll;
     document.getElementById('btn-commit').onclick = commitPO;
+    document.getElementById('btn-add-manual').onclick = ()=>{
+      const code = document.getElementById('manual-code').value.trim();
+      const qty = parseInt(document.getElementById('manual-count').value)||1;
+      if(code){ addToBuffer(code, qty); }
+      document.getElementById('manual-code').value='';
+      document.getElementById('manual-count').value=1;
+    };
 
     startScanner();
   </script>
