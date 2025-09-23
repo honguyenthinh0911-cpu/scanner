@@ -102,7 +102,8 @@
       buffer: new Map(), // barcode chưa gán PO
       totalScans: 0,
       sessionId: `sess_${Date.now()}`,
-      lastScanTime: 0
+      lastScanTime: 0,
+      lastCode: null
     };
 
     function refreshKPIs(){
@@ -112,9 +113,15 @@
 
     function addToBuffer(barcode, qty=1){
       const now = Date.now();
-      if(now - state.lastScanTime < 2000) return; // delay 2 giây giữa các lần quét
-      state.lastScanTime = now;
       if(!barcode) return;
+
+      // tránh quét trùng
+      if(barcode === state.lastCode && (now - state.lastScanTime < 2000)) {
+        return;
+      }
+
+      state.lastScanTime = now;
+      state.lastCode = barcode;
 
       const code128Regex = /^[A-Za-z0-9\-]+$/;
       if(!code128Regex.test(barcode)) return;
@@ -218,7 +225,19 @@
     }
 
     function startScanner(){
-      const config = { fps: 30, qrbox: {width:800, height:300}, rememberLastUsedCamera:true, showTorchButtonIfSupported:true, aspectRatio:1.7778, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }; // tăng fps, vùng quét lớn hơn, bật barcode detector
+      const config = { 
+        fps: 25, 
+        qrbox: {width:500, height:150}, // vùng quét hẹp hơn để lấy barcode nhỏ
+        rememberLastUsedCamera:true,
+        showTorchButtonIfSupported:true,
+        aspectRatio:1.7778,
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+        videoConstraints: {
+          facingMode: "environment",
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      };
       if(window.scanner){ window.scanner.clear().catch(()=>{}); }
       window.scanner = new Html5QrcodeScanner('reader', config, false);
       window.scanner.render(onScanSuccess);
